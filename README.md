@@ -1,1 +1,1 @@
-# Active_Learning_Segmentation_Benchmarking
+# Active Learning Segmentation Benchmarking
