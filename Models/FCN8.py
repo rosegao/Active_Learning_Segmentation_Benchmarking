@@ -30,11 +30,9 @@ def crop(o1, o2, i, image_ordering='channels_first'):
 
 
 def FCN8(nClasses, input_height, input_width, image_ordering='channels_first'):
-
 	pretrained = VGG16(weights='imagenet')
 	weights = pretrained.get_weights()
-
-    img_input = Input(shape=(3, input_height, input_width))
+	img_input = Input(shape=(3, input_height, input_width))
 
     x = Conv2D(64, (3, 3), activation='relu', padding='same', name='block1_conv1', data_format=image_ordering)(
         img_input)

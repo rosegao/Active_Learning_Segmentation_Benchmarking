@@ -5,9 +5,9 @@ from keras.applications import VGG16
 
 def VGGUnet(n_classes, input_height, input_width, image_ordering='channels_first'):
 
-    img_input = Input(shape=(3, input_height, input_width))
-	pretrained = VGG16(weights='imagenet')
+    pretrained = VGG16(weights='imagenet')
 	weights = pretrained.get_weights()
+	img_input = Input(shape=(3, input_height, input_width))
 
     x = Conv2D(64, (3, 3), activation='relu', padding='same', name='block1_conv1', data_format=image_ordering)(
         img_input)
