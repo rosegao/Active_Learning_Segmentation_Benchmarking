@@ -178,11 +178,7 @@ def getImageArr(path, width, height, imgNorm="sub_mean", ordering='channels_firs
         return img
 
 
-SEG_PATH = './CityScapes Dataset/segmentations'
-IMG_PATH = './CityScapes Dataset/rawimgs'
-SPLIT = 'train'
-
-def DataGenerator(img_path=IMG_PATH, seg_path=SEG_PATH, split='TRAIN',
+def DataGenerator(img_path, seg_path, split,
                   n_classes=30,
                   input_width=224, input_height=224,
                   output_width=112, output_height=112,
@@ -194,9 +190,9 @@ def DataGenerator(img_path=IMG_PATH, seg_path=SEG_PATH, split='TRAIN',
     img_dir = os.path.join(img_path, split)
     seg_dir = os.path.join(seg_path, split)
 
-    images = os.listdir(img_dir)
+    images = list(set(os.listdir(img_dir)))
     images.sort()
-    segmentations = os.listdir(seg_dir)
+    segmentations = list(set(os.listdir(seg_dir)))
     segmentations.sort()
 
     assert len(images) == len(segmentations)
@@ -219,8 +215,7 @@ def DataGenerator(img_path=IMG_PATH, seg_path=SEG_PATH, split='TRAIN',
 
         yield np.array(X), np.array(Y)
 
-def SampleDataVisualizer(img_path=IMG_PATH, seg_path=SEG_PATH, split='TRAIN',
-                        num_imgs=10):
+def SampleDataVisualizer(img_path, seg_path, split, num_imgs=5):
     img_dir = os.path.join(img_path, split)
     seg_dir = os.path.join(seg_path, split)
 
