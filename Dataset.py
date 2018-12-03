@@ -9,6 +9,7 @@ import itertools
 import shutil
 import matplotlib.pyplot as plt
 from collections import namedtuple
+import time
 
 
 #--------------------------------------------------------------------------------
@@ -123,6 +124,10 @@ def create_label_dicts():
 
     return class2color, class2name
 
+#--------------------------------------------------------------------------------
+# Prepare Images and Segmentations
+#--------------------------------------------------------------------------------
+
 
 def getSegmentationArr(path, nClasses, width, height, class2color):
     '''
@@ -177,12 +182,14 @@ def getImageArr(path, width, height, imgNorm="sub_mean", ordering='channels_firs
             img = np.rollaxis(img, 2, 0)
         return img
 
+def resize_img(path, target_width, target_height, target_path):
+    '''
+    '''
+    img = cv2.imread(path, 1)
+    img = cv2.resize(img, (target_width, target_height))
+    cv2.imwrite(target_path, img)
 
-SEG_PATH = './CityScapes Dataset/segmentations'
-IMG_PATH = './CityScapes Dataset/rawimgs'
-SPLIT = 'train'
-
-def DataGenerator(img_path=IMG_PATH, seg_path=SEG_PATH, split='TRAIN',
+def DataGenerator(img_path seg_path, split='small_train',
                   n_classes=30,
                   input_width=224, input_height=224,
                   output_width=112, output_height=112,
@@ -242,6 +249,74 @@ def SampleDataVisualizer(img_path=IMG_PATH, seg_path=SEG_PATH, split='TRAIN',
         axarr[1].axis('off')
 
 
+def SegmentationDataset(img_path, seg_path, split,
+                  n_classes=30,
+                  input_width=224, input_height=224,
+                  output_width=112, output_height=112,
+                  imgNorm='sub_mean',
+                  ordering='channels_first'
+                  ):
+
+    img_dir = os.path.join(img_path, split)
+    seg_dir = os.path.join(seg_path, split)
+    print('Looking for images in {}'.format(img_dir))
+    print('Looking for segmentations in {}'.format(seg_dir))
+
+    images = os.listdir(img_dir)
+    images.sort()
+    segmentations = os.listdir(seg_dir)
+    segmentations.sort()
+
+    assert len(images) == len(segmentations)
+    print("Number of images match, creating dataset.")
+
+    class2color, _ = create_label_dicts()
+
+    X, Y = [], []
+    n = 0
+    start = time.time()
+    for img, seg in zip(images, segmentations):
+        assert ('_'.join(img.split('_')[0:3]) == '_'.join(seg.split('_')[0:3]))
+        img, seg = os.path.join(img_dir, img), os.path.join(seg_dir, seg)
+
+        img = getImageArr(img, input_width, input_height, imgNorm, ordering)
+        seg = getSegmentationArr(seg, n_classes, output_width, output_height, class2color)
+
+        X.append(img)
+        Y.append(seg)
+        n += 1
+        if n % 100 == 0 :
+            elapsed = time.time() - start
+            print('{} images processed, Time elapsed: {}'.format(n, elapsed))
+
+    return np.array(X), np.array(Y)
+
+#--------------------------------------------------------------------------------
+# Active Learning Splits
+#--------------------------------------------------------------------------------
+
+def train_test_split(X, y, percent):
+    X_train = []
+    y_train = []
+    X_test = list(X)
+    y_test = list(y)
+
+    train_size = int(len(X_test) * percent)
+
+    while len(X_train) < train_size:
+        index = random.randrange(len(X_test))
+        X_train.append(X_test.pop(index))
+        y_train.append(y_test.pop(index))
+
+    return np.array(X_test), np.array(y_test), np.array(X_train), np.array(y_train)
+
+def split_dataset(X_train, X_test, y_train, y_test, initial_annotated_perc=0.1):
+    X_pool, y_pool, X_initial, y_initial = train_test_split(X_train,
+                                                            y_train,
+                                                            initial_annotated_perc)
+    return X_pool, y_pool, X_initial, y_initial, X_test, y_test
+
+
 #--------------------------------------------------------------------------------
 # Un-nest some folders and select desired annotations from CityScapes raw data
 #--------------------------------------------------------------------------------
@@ -278,29 +353,74 @@ def prep_annotations():
 def prep_imgs():
     root = './CityScapes Dataset/'
     img_root = 'leftImg8bit'
-    annotation_root = img_root
-
-    annotation_dir = os.path.join(root, annotation_root)
+    annotation_root = 'gtFine'
     splits = ['train', 'val', 'test']
 
-    dest_path = './CityScapes Dataset/rawimgs'
-    os.makedirs(dest_path, exist_ok=True)
+    for type in [img_root, annotation_root]:
+        print(type)
+        if type == 'leftImg8bit':
+            dest_path = os.path.join(root, 'rawimgs')
+        else:
+            dest_path = os.path.join(root, 'segmentations')
 
-    for split in splits:
-        print(split)
-        ann_split_path = os.path.join(annotation_dir, split)
-        dest_split_path = os.path.join(dest_path, split)
-        os.makedirs(dest_split_path, exist_ok=True)
+        base_dir = os.path.join(root, type)
+        for spl in splits:
+            og_spl_path = os.path.join(base_dir, spl)
+            dest_split_path = os.path.join(dest_path, spl)
+            os.makedirs(dest_split_path, exist_ok=True)
+            cities = os.listdir(og_spl_path)
+            for city in cities:
+                if city != '.DS_Store':
+                    full_origin_dir = os.path.join(og_spl_path, city)
+                    print('copying file from: ', full_origin_dir)
+                for im in os.listdir(full_origin_dir):
+                    if type == 'gtFine':
+                        if im.endswith('color.png'):
+                            oi = os.path.join(full_origin_dir, im)
+                            di = os.path.join(dest_split_path, im)
+                    else:
+                        oi = os.path.join(full_origin_dir, im)
+                        di = os.path.join(dest_split_path, im)
+                    shutil.copy(oi, di)
+            n_imgs = len(os.listdir(dest_split_path))
+            print("Number of images copied: {}".format(n_imgs))
 
-        cities = os.listdir(ann_split_path)
-        for city in cities:
-            if city != '.DS_Store':
-                full_origin_dir = os.path.join(ann_split_path, city)
-            for seg in os.listdir(full_origin_dir):
-                orig_seg = os.path.join(full_origin_dir, seg)
-                dest_seg = os.path.join(dest_split_path, seg)
-        n_imgs = len(os.listdir(dest_split_path))
-        print("Number of images copied: {}".format(n_imgs))
+
+def subset(num_images, split):
+    '''
+    '''
+    img_origin_path = './CityScapes Dataset/rawimgs/{}'.format(split)
+    seg_origin_path = './CityScapes Dataset/segmentations/{}'.format(split)
+
+    img_dest_path = './CityScapes Dataset/rawimgs/small_{}'.format(split)
+    seg_dest_path = './CityScapes Dataset/segmentations/small_{}'.format(split)
+
+    os.makedirs(img_dest_path, exist_ok=True)
+    os.makedirs(seg_dest_path, exist_ok=True)
+
+    images = os.listdir(img_origin_path)
+    segmentations = os.listdir(seg_origin_path)
+
+    assert (len(images) == len(segmentations))
+    images.sort()
+    segmentations.sort()
+    target_width, target_height = 512, 256
+    for i in range(num_images):
+        iop = os.path.join(img_origin_path, images[i])
+        sop = os.path.join(seg_origin_path, segmentations[i])
+
+        idp = os.path.join(img_dest_path, images[i])
+        sdp = os.path.join(seg_dest_path, segmentations[i])
+
+        resize_img(iop, target_width, target_height, idp)
+        resize_img(sop, target_width, target_height, sdp)
+
+        #shutil.copy(iop, idp)
+        #shutil.copy(idp, sdp)
+
+
+    print('Num images: {}'.format(len(os.listdir(img_dest_path))))
+    print('Num segmentations: {}'.format(len(os.listdir(seg_dest_path))))
 
 
 def data_generator():
